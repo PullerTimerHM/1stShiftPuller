@@ -1,0 +1,286 @@
+<!DOCTYPE html> 
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Puller Timeline</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f0f0f0;
+      padding: 20px;
+    }
+    h1 {
+      margin-bottom: 10px;
+    }
+    #date {
+      font-size: 18px;
+      margin-bottom: 5px;
+    }
+    #clock {
+      font-size: 24px;
+      font-weight: bold;
+      margin-bottom: 20px;
+    }
+    h2 {
+      margin-top: 40px;
+    }
+    .timeline-wrapper {
+      overflow-x: auto;
+    }
+    .timeline-container {
+      min-width: max-content;
+    }
+    .timeline {
+      position: relative;
+      display: flex;
+      flex-wrap: nowrap;
+      height: auto;
+      border: 1px solid #ccc;
+      background: #fff;
+      margin-bottom: 0;
+    }
+    .block {
+      flex: 0 0 auto;
+      width: 90px;
+      height: 90px;
+      border-right: 1px solid #ccc;
+      cursor: pointer;
+      background-color: #e0e0e0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      position: relative;
+    }
+    .block:last-child {
+      border-right: none;
+    }
+    .block.break {
+      background-color: #000 !important;
+      cursor: not-allowed;
+    }
+    .block.clicked {
+      background-color: #40E0D0 !important;
+    }
+    .time-indicator {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 7px;
+      background-color: red;
+      z-index: 10;
+    }
+    .label-row {
+      display: flex;
+      flex-wrap: nowrap;
+      font-size: 14px;
+      margin-top: 5px;
+      margin-bottom: 30px;
+    }
+    .label-row span {
+      flex: 0 0 auto;
+      width: 90px;
+      text-align: center;
+    }
+    button {
+      margin-top: 20px;
+      padding: 10px 15px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .count-tag {
+      position: absolute;
+      bottom: 2px;
+      right: 2px;
+      font-size: 12px;
+      background: rgba(0, 0, 0, 0.6);
+      color: #fff;
+      padding: 2px 4px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <h1>1st Shift Puller Performance</h1>
+  <div id="date"></div>
+  <div id="clock"></div>
+
+  <h2>Puller 1</h2>
+  <div class="timeline-wrapper">
+    <div class="timeline-container">
+      <div class="timeline" id="timeline1"></div>
+      <div class="label-row" id="labels1"></div>
+    </div>
+  </div>
+
+  <h2>Puller 2</h2>
+  <div class="timeline-wrapper">
+    <div class="timeline-container">
+      <div class="timeline" id="timeline2"></div>
+      <div class="label-row" id="labels2"></div>
+    </div>
+  </div>
+
+  <button onclick="downloadLogs()">Download Click Logs</button>
+
+  <script>
+    let pullerCounts = {
+      'Puller 1': 0,
+      'Puller 2': 0
+    };
+
+    const startHour = 7;
+    const endHour = 15; 
+    const intervalMinutes = 6;
+    const breakTimes = [
+      { start: '09:30', end: '09:50' },
+      { start: '12:00', end: '12:30' }
+    ];
+
+    const timelineNames = {
+      'timeline1': 'Puller 1',
+      'timeline2': 'Puller 2'
+    };
+
+    function isBreakBlock(startTimeStr, endTimeStr) {
+      const [sh, sm] = startTimeStr.split(':').map(Number);
+      const [eh, em] = endTimeStr.split(':').map(Number);
+      const start = sh * 60 + sm;
+      const end = eh * 60 + em;
+      return breakTimes.some(b => {
+        const [bh, bm] = b.start.split(':').map(Number);
+        const [bh2, bm2] = b.end.split(':').map(Number);
+        const bStart = bh * 60 + bm;
+        const bEnd = bh2 * 60 + bm2;
+        return (start < bEnd && end > bStart);
+      });
+    }
+
+    function generateTimeline(timelineId, labelId) {
+      const timeline = document.getElementById(timelineId);
+      const labelRow = document.getElementById(labelId);
+
+      for (let totalMinutes = startHour * 60; totalMinutes < endHour * 60; totalMinutes += intervalMinutes) {
+        const displayHour = Math.floor((totalMinutes / 60) % 24);
+        const min = totalMinutes % 60;
+        const startTime = `${displayHour.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`;
+
+        let endMin = min + intervalMinutes;
+        let endHour = displayHour;
+        if (endMin >= 60) {
+          endMin -= 60;
+          endHour = (endHour + 1) % 24;
+        }
+
+        const block = document.createElement('div');
+        if (isBreakBlock(startTime, `${endHour.toString().padStart(2, '0')}:${endMin.toString().padStart(2, '0')}`)) {
+          block.classList.add('block', 'break');
+        } else {
+          block.classList.add('block');
+          block.onclick = () => {
+            const logs = JSON.parse(localStorage.getItem('clickLogs') || '[]');
+            const timeOnly = new Date().toLocaleTimeString();
+            const fullTimestamp = new Date().toLocaleString();
+            const label = timelineNames[timelineId];
+
+            pullerCounts[label]++;
+            const count = pullerCounts[label];
+
+            logs.push({
+              timeline: label,
+              timeBlock: startTime,
+              clickedAt: fullTimestamp
+            });
+            localStorage.setItem('clickLogs', JSON.stringify(logs));
+
+            block.innerHTML = '';
+            block.classList.add('clicked');
+
+            const timeTag = document.createElement('div');
+            timeTag.textContent = timeOnly;
+            block.appendChild(timeTag);
+
+            const countTag = document.createElement('div');
+            countTag.className = 'count-tag';
+            countTag.textContent = `x${count}`;
+            block.appendChild(countTag);
+          };
+        }
+
+        timeline.appendChild(block);
+
+        const label = document.createElement('span');
+        const ampm = displayHour >= 12 ? 'PM' : 'AM';
+        const hour12 = displayHour % 12 === 0 ? 12 : displayHour % 12;
+        label.textContent = `${hour12}:${min.toString().padStart(2, '0')} ${ampm}`;
+        labelRow.appendChild(label);
+      }
+
+      const indicator = document.createElement('div');
+      indicator.className = 'time-indicator';
+
+      const flag = document.createElement('div');
+      flag.className = 'flag-icon';
+      flag.textContent = '🚩';
+      indicator.appendChild(flag);
+
+      timeline.appendChild(indicator);
+
+      function updateIndicator() {
+        const now = new Date();
+        const totalTimelineMinutes = (endHour - startHour) * 60;
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+        const startMinutes = startHour * 60;
+        const elapsed = (currentMinutes >= startMinutes) ? currentMinutes - startMinutes : (currentMinutes + 1440) - startMinutes;
+
+        if (elapsed >= 0 && elapsed <= totalTimelineMinutes) {
+          const percent = (elapsed / totalTimelineMinutes) * 100;
+          indicator.style.left = percent + '%';
+
+          const blockIndex = Math.floor(elapsed / intervalMinutes);
+          const blocks = timeline.querySelectorAll('.block');
+          const targetBlock = blocks[blockIndex];
+          if (targetBlock && !targetBlock.classList.contains('break')) {
+            targetBlock.scrollIntoView({ behavior: "smooth", inline: "center" });
+          }
+        } else {
+          indicator.style.left = '-10px';
+        }
+      }
+
+      updateIndicator();
+      setInterval(updateIndicator, 60000);
+    }
+
+    function updateClock() {
+      const now = new Date();
+      const date = now.toLocaleDateString();
+      const time = now.toLocaleTimeString();
+      document.getElementById('date').textContent = date;
+      document.getElementById('clock').textContent = time;
+    }
+
+    function downloadLogs() {
+      const logs = JSON.parse(localStorage.getItem('clickLogs') || '[]');
+      if (!logs.length) return alert("No data to download!");
+      let csv = 'Timeline,Time Block,Clicked At\n';
+      logs.forEach(log => {
+        csv += `${log.timeline},${log.timeBlock},${log.clickedAt}\n`;
+      });
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      const now = new Date();
+      const timestamp = now.toISOString().replace(/[:.]/g, '-');
+      link.download = `click_logs_${timestamp}.csv`;
+      link.click();
+    }
+
+    setInterval(updateClock, 1000);
+    updateClock();
+    generateTimeline('timeline1', 'labels1');
+    generateTimeline('timeline2', 'labels2');
+  </script>
+</body>
+</html>
